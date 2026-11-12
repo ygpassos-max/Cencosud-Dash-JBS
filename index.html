@@ -47,6 +47,16 @@ button:hover{background:var(--bg)}
 .tbl td{padding:10px 6px;border-bottom:1px solid var(--line)}
 .tbl tr.sel td{font-weight:700}
 .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:8px;vertical-align:-1px}
+button.ms-btn{width:100%;text-align:left;padding:10px 34px 10px 12px;position:relative;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.95rem}
+.ms{position:relative}
+.ms-btn::after{content:"";position:absolute;right:12px;top:50%;border:5px solid transparent;border-top-color:var(--muted);transform:translateY(-25%)}
+.ms-panel{position:absolute;z-index:20;top:calc(100% + 4px);left:0;min-width:100%;max-height:300px;overflow:auto;background:var(--card);border:1px solid var(--inputline);border-radius:8px;box-shadow:0 8px 24px rgba(16,24,40,.18);padding:6px}
+.ms-panel[hidden]{display:none}
+.ms-row{display:flex;gap:8px;align-items:center;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:.9rem;white-space:nowrap}
+.ms-row:hover{background:var(--bg)}
+.ms-row.all{font-weight:600;border-bottom:1px solid var(--line);margin-bottom:4px;border-radius:6px 6px 0 0}
+.ms-row input{accent-color:var(--navy2);width:16px;height:16px;cursor:pointer}
+.hint{font-size:.78rem;color:var(--muted);align-self:center;max-width:220px}
 footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
 @media(max-width:800px){.pie-body{grid-template-columns:1fr}}
 @media(max-width:600px){header{padding:20px}main{padding:16px}.chart-wrap{height:320px}}
@@ -62,10 +72,11 @@ footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
 </header>
 <main>
   <section class="card filters">
-    <div class="field"><label for="fSecao">Seção</label><select id="fSecao"></select></div>
-    <div class="field"><label for="fBandeira">Bandeira</label><select id="fBandeira"></select></div>
-    <div class="field"><label for="fCorte">Corte</label><select id="fCorte"></select></div>
+    <div class="field"><label for="btnSecao">Seção</label><div class="ms" id="msSecao"></div></div>
+    <div class="field"><label for="btnBandeira">Bandeira</label><div class="ms" id="msBandeira"></div></div>
+    <div class="field"><label for="btnCorte">Corte</label><div class="ms" id="msCorte"></div></div>
     <button id="btnLimpar" type="button">Limpar filtros</button>
+    <span class="hint">Marque mais de uma opção para combinar. Sem marcação = todas.</span>
   </section>
 
   <section class="kpis">
@@ -114,18 +125,63 @@ const nf = new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractio
 const fmt = n => nf.format(n);
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const $ = id => document.getElementById(id);
-const $s=$('fSecao'), $b=$('fBandeira'), $c=$('fCorte'), $base=$('fBase');
+const $base = $('fBase');
+const has = (set, v) => set.size === 0 || set.has(v);
+const txt = (set, todos) => set.size ? [...set].join(', ') : todos;
 
-$('periodo').textContent = MESES.length ? `${MESES[0]} – ${MESES[MESES.length-1]}/2026` : '2026';
-$s.innerHTML = '<option value="Todas">Todas</option>' + SECOES.map(s=>`<option>${s}</option>`).join('');
-$b.innerHTML = '<option value="Todas">Todas</option>' + BANDEIRAS.map(b=>`<option>${b}</option>`).join('');
+// Filtro com caixas de marcação (multi-seleção). Nenhuma marcada = todas.
+function makeMS(root, btnId, todos, plural, onChange){
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.id = btnId; btn.className = 'ms-btn';
+  btn.setAttribute('aria-haspopup','true'); btn.setAttribute('aria-expanded','false');
+  const panel = document.createElement('div');
+  panel.className = 'ms-panel'; panel.hidden = true;
+  root.appendChild(btn); root.appendChild(panel);
+  let options = [], sel = new Set();
+  const setLabel = () => { btn.textContent = sel.size===0 ? todos : sel.size===1 ? [...sel][0] : `${sel.size} ${plural}`; };
+  const row = (value, checked, isAll) => {
+    const l = document.createElement('label'); l.className = 'ms-row' + (isAll ? ' all' : '');
+    const i = document.createElement('input'); i.type = 'checkbox'; i.checked = checked;
+    if(isAll) i.dataset.all = '1'; else i.dataset.v = value;
+    const s = document.createElement('span'); s.textContent = isAll ? todos : value;
+    l.appendChild(i); l.appendChild(s); return l;
+  };
+  const render = () => {
+    const top = panel.scrollTop; panel.innerHTML = '';
+    panel.appendChild(row('', sel.size===0, true));
+    options.forEach(o => panel.appendChild(row(o, sel.has(o), false)));
+    panel.scrollTop = top;
+  };
+  const close = () => { panel.hidden = true; btn.setAttribute('aria-expanded','false'); };
+  btn.addEventListener('click', () => { const abrir = panel.hidden; document.dispatchEvent(new Event('ms-close')); panel.hidden = !abrir; btn.setAttribute('aria-expanded', String(abrir)); });
+  panel.addEventListener('change', e => {
+    const t = e.target;
+    if(t.dataset.all){ sel.clear(); }
+    else if(t.checked){ sel.add(t.dataset.v); }
+    else { sel.delete(t.dataset.v); }
+    render(); setLabel(); onChange();
+  });
+  document.addEventListener('ms-close', close);
+  document.addEventListener('click', e => { if(!root.contains(e.target)) close(); });
+  document.addEventListener('keydown', e => { if(e.key==='Escape') close(); });
+  return {
+    get: () => sel,
+    setOptions(list){ options = list; sel = new Set([...sel].filter(x => list.includes(x))); render(); setLabel(); },
+    clear(){ sel.clear(); render(); setLabel(); }
+  };
+}
 
-// Corte depende da Seção escolhida
+const msS = makeMS($('msSecao'), 'btnSecao', 'Todas', 'seções', () => { fillCortes(); update(); });
+const msB = makeMS($('msBandeira'), 'btnBandeira', 'Todas', 'bandeiras', () => update());
+const msC = makeMS($('msCorte'), 'btnCorte', 'Todos', 'cortes', () => update());
+msS.setOptions(SECOES);
+msB.setOptions(BANDEIRAS);
+
+// Corte depende das Seções marcadas
 function fillCortes(){
-  const sec = $s.value, atual = $c.value;
-  const lista = [...new Set(DATA.filter(d => sec==='Todas'||d.secao===sec).map(d => d.corte))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  $c.innerHTML = '<option value="Todos">Todos</option>' + lista.map(c=>`<option>${c}</option>`).join('');
-  $c.value = lista.includes(atual) ? atual : 'Todos';
+  const sec = msS.get();
+  const lista = [...new Set(DATA.filter(d => has(sec, d.secao)).map(d => d.corte))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  msC.setOptions(lista);
 }
 
 Chart.defaults.font.family = '"Segoe UI",system-ui,Arial,sans-serif';
@@ -164,8 +220,8 @@ const pie = new Chart($('pie'), {
 });
 
 function update(){
-  const s=$s.value, b=$b.value, c=$c.value;
-  const rows = DATA.filter(d => (s==='Todas'||d.secao===s) && (b==='Todas'||d.bandeira===b) && (c==='Todos'||d.corte===c));
+  const s=msS.get(), b=msB.get(), c=msC.get();
+  const rows = DATA.filter(d => has(s,d.secao) && has(b,d.bandeira) && has(c,d.corte));
   const porMes = MESES.map(()=>({e:0, v:0, f:0}));
   let e=0, v=0, f=0;
   for(const d of rows){
@@ -178,7 +234,7 @@ function update(){
   $('kVenda').textContent = fmt(v);
   $('kFat').textContent = fmt(f);
   $('kVendaSub').textContent = e>0 ? `Venda/Entrada: ${fmt(v/e*100)}%` : '\u00a0';
-  $('chartSub').textContent = `Seção: ${s} · Bandeira: ${b} · Corte: ${c} · Média = média mensal do período`;
+  $('chartSub').textContent = `Seção: ${txt(s,'Todas')} · Bandeira: ${txt(b,'Todas')} · Corte: ${txt(c,'Todos')} · Média = média mensal do período`;
   const r3 = x => +x.toFixed(3);
   chart.data.datasets[0].data = [...porMes.map(m=>r3(m.e)), r3(e/n)];
   chart.data.datasets[1].data = [...porMes.map(m=>r3(m.v)), r3(v/n)];
@@ -188,27 +244,24 @@ function update(){
 }
 
 function updatePie(){
-  const s=$s.value, b=$b.value, c=$c.value, base=$base.value;
-  const rows = DATA.filter(d => (s==='Todas'||d.secao===s) && (c==='Todos'||d.corte===c));
+  const s=msS.get(), b=msB.get(), c=msC.get(), base=$base.value;
+  const rows = DATA.filter(d => has(s,d.secao) && has(c,d.corte));
   const vals = BANDEIRAS.map(x => rows.filter(d=>d.bandeira===x).reduce((acc,d)=>acc+d[base==='venda'?'venda':base==='entrada'?'entrada':'fat'],0));
   const total = vals.reduce((a,x)=>a+x,0);
   const ds = pie.data.datasets[0];
   ds.data = vals.map(x=>+x.toFixed(3));
-  ds.backgroundColor = BANDEIRAS.map(x => (b==='Todas'||b===x) ? COLORS[x] : COLORS[x]+'55');
-  ds.offset = BANDEIRAS.map(x => b===x ? 18 : 0);
+  ds.backgroundColor = BANDEIRAS.map(x => (b.size===0||b.has(x)) ? COLORS[x] : COLORS[x]+'55');
+  ds.offset = BANDEIRAS.map(x => b.has(x) ? 18 : 0);
   ds.borderColor = cssVar('--card');
   pie.update();
-  $('pieSub').textContent = `${BASES[base]} · Seção: ${s} · Corte: ${c}` + (b!=='Todas' ? ` · destaque: ${b}` : '');
+  $('pieSub').textContent = `${BASES[base]} · Seção: ${txt(s,'Todas')} · Corte: ${txt(c,'Todos')}` + (b.size ? ` · destaque: ${txt(b,'')}` : '');
   $('pieTbl').innerHTML = BANDEIRAS.map((x,i)=>
-    `<tr class="${b===x?'sel':''}"><td><span class="dot" style="background:${COLORS[x]}"></span>${x}</td><td>${fmt(vals[i])}</td><td>${fmt(total?vals[i]/total*100:0)}%</td></tr>`).join('')
+    `<tr class="${b.has(x)?'sel':''}"><td><span class="dot" style="background:${COLORS[x]}"></span>${x}</td><td>${fmt(vals[i])}</td><td>${fmt(total?vals[i]/total*100:0)}%</td></tr>`).join('')
     + `<tr><td><b>Total</b></td><td><b>${fmt(total)}</b></td><td><b>${fmt(total?100:0)}%</b></td></tr>`;
 }
 
-$s.addEventListener('change', ()=>{ fillCortes(); update(); });
-$b.addEventListener('change', update);
-$c.addEventListener('change', update);
 $base.addEventListener('change', updatePie);
-$('btnLimpar').addEventListener('click', ()=>{ $s.value='Todas'; $b.value='Todas'; fillCortes(); $c.value='Todos'; $base.value='venda'; update(); });
+$('btnLimpar').addEventListener('click', ()=>{ msS.clear(); msB.clear(); fillCortes(); msC.clear(); $base.value='venda'; update(); });
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{
   Chart.defaults.color = cssVar('--muted');
   chart.data.datasets[0].backgroundColor = cssVar('--bar1');
