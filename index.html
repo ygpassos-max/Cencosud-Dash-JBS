@@ -25,9 +25,9 @@ select:focus{outline:2px solid var(--navy2);outline-offset:1px}
 button{padding:10px 16px;border:1px solid var(--inputline);background:var(--input);border-radius:8px;cursor:pointer;font-size:.9rem;color:var(--ink)}
 button:hover{background:var(--bg)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-bottom:20px}
-.kpi{padding:20px 22px;border-left:5px solid var(--bar1)}
-.kpi:nth-child(2){border-left-color:var(--green)}
-.kpi:nth-child(3){border-left-color:var(--orange)}
+.kpi{padding:20px 22px;border-left:5px solid var(--orange)}
+.kpi:nth-child(2){border-left-color:var(--bar1)}
+.kpi:nth-child(3){border-left-color:var(--green)}
 .kpi .t{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600}
 .kpi .v{font-size:1.55rem;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums;word-break:break-word}
 .kpi .s{font-size:.78rem;color:var(--muted);margin-top:6px}
@@ -72,21 +72,22 @@ footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
 </header>
 <main>
   <section class="card filters">
-    <div class="field"><label for="btnSecao">Seção</label><div class="ms" id="msSecao"></div></div>
     <div class="field"><label for="btnBandeira">Bandeira</label><div class="ms" id="msBandeira"></div></div>
+    <div class="field"><label for="btnMes">Mês</label><div class="ms" id="msMes"></div></div>
+    <div class="field"><label for="btnSecao">Seção</label><div class="ms" id="msSecao"></div></div>
     <div class="field"><label for="btnCorte">Corte</label><div class="ms" id="msCorte"></div></div>
     <button id="btnLimpar" type="button">Limpar filtros</button>
     <span class="hint">Marque mais de uma opção para combinar. Sem marcação = todas.</span>
   </section>
 
   <section class="kpis">
+    <div class="card kpi"><div class="t">Tonelagem Faturamento JBS (KG)</div><div class="v" id="kFat">–</div><div class="s">Volume faturado pela JBS</div></div>
     <div class="card kpi"><div class="t">Tonelagem Entrada Cenco (KG)</div><div class="v" id="kEntrada">–</div><div class="s">Volume recebido no período</div></div>
     <div class="card kpi"><div class="t">Tonelagem Venda Cenco (KG)</div><div class="v" id="kVenda">–</div><div class="s" id="kVendaSub">&nbsp;</div></div>
-    <div class="card kpi"><div class="t">Tonelagem Faturamento JBS (KG)</div><div class="v" id="kFat">–</div><div class="s">Volume faturado pela JBS</div></div>
   </section>
 
   <section class="card chart-card">
-    <h2>Entrada x Venda (barras) e Faturamento JBS (linha) por mês (KG)</h2>
+    <h2>Entrada x Venda x Faturamento JBS por mês (KG)</h2>
     <div class="sub" id="chartSub"></div>
     <div class="chart-wrap"><canvas id="chart"></canvas></div>
   </section>
@@ -96,9 +97,9 @@ footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
       <div><h2>Participação de cada Bandeira (KG)</h2><div class="sub" id="pieSub"></div></div>
       <div class="field" style="min-width:220px"><label for="fBase">Participação por</label>
         <select id="fBase">
-          <option value="venda">Tonelagem Venda Cenco</option>
-          <option value="entrada">Tonelagem Entrada Cenco</option>
           <option value="fat">Tonelagem Faturamento JBS</option>
+          <option value="entrada">Tonelagem Entrada Cenco</option>
+          <option value="venda">Tonelagem Venda Cenco</option>
         </select></div>
     </div>
     <div class="pie-body">
@@ -121,8 +122,10 @@ const SECOES = [...new Set(DATA.map(d => d.secao))].sort((a,b)=>a.localeCompare(
 const COLORS = {GBARBOSA:'#0b5ea8',PREZUNIC:'#e8871e',BRETAS:'#1f9d6b',GIGA:'#8e5bd1'};
 const BASES = {venda:'Tonelagem Venda Cenco', entrada:'Tonelagem Entrada Cenco', fat:'Tonelagem Faturamento JBS'};
 
-const nf = new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const nf = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
+const pf = new Intl.NumberFormat('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
 const fmt = n => nf.format(n);
+const pct = n => pf.format(n);
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const $ = id => document.getElementById(id);
 const $base = $('fBase');
@@ -174,7 +177,9 @@ function makeMS(root, btnId, todos, plural, onChange){
 const msS = makeMS($('msSecao'), 'btnSecao', 'Todas', 'seções', () => { fillCortes(); update(); });
 const msB = makeMS($('msBandeira'), 'btnBandeira', 'Todas', 'bandeiras', () => update());
 const msC = makeMS($('msCorte'), 'btnCorte', 'Todos', 'cortes', () => update());
+const msM = makeMS($('msMes'), 'btnMes', 'Todos', 'meses', () => update());
 msS.setOptions(SECOES);
+msM.setOptions(MESES);
 msB.setOptions(BANDEIRAS);
 
 // Corte depende das Seções marcadas
@@ -188,10 +193,11 @@ Chart.defaults.font.family = '"Segoe UI",system-ui,Arial,sans-serif';
 Chart.defaults.color = cssVar('--muted');
 
 const chart = new Chart($('chart'), {
+  type:'bar',
   data:{labels:[...MESES,'Média'], datasets:[
-    {type:'bar', label:'Tonelagem Entrada Cenco (KG)', data:[], backgroundColor:cssVar('--bar1'), borderRadius:4, order:2},
-    {type:'bar', label:'Tonelagem Venda Cenco (KG)', data:[], backgroundColor:'#1f9d6b', borderRadius:4, order:2},
-    {type:'line', label:'Tonelagem Faturamento JBS (KG)', data:[], borderColor:'#e8871e', backgroundColor:'#e8871e', borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.25, order:1}
+    {label:'Tonelagem Faturamento JBS (KG)', data:[], backgroundColor:'#e8871e', borderRadius:4},
+    {label:'Tonelagem Entrada Cenco (KG)', data:[], backgroundColor:cssVar('--bar1'), borderRadius:4},
+    {label:'Tonelagem Venda Cenco (KG)', data:[], backgroundColor:'#1f9d6b', borderRadius:4}
   ]},
   options:{
     responsive:true, maintainAspectRatio:false,
@@ -202,7 +208,7 @@ const chart = new Chart($('chart'), {
     },
     scales:{
       x:{grid:{display:false}},
-      y:{grid:{color:cssVar('--grid')}, beginAtZero:true, title:{display:true,text:'KG'}, ticks:{callback:v => nf.format(v).replace(/,00$/,'')}}
+      y:{grid:{color:cssVar('--grid')}, beginAtZero:true, title:{display:true,text:'KG'}, ticks:{callback:v => nf.format(v)}}
     }
   }
 });
@@ -214,38 +220,40 @@ const pie = new Chart($('pie'), {
     responsive:true, maintainAspectRatio:false,
     plugins:{
       legend:{position:'bottom'},
-      tooltip:{callbacks:{label:c=>{const tot=c.dataset.data.reduce((a,v)=>a+v,0);return ` ${c.label}: ${fmt(c.parsed)} KG (${fmt(tot?c.parsed/tot*100:0)}%)`}}}
+      tooltip:{callbacks:{label:c=>{const tot=c.dataset.data.reduce((a,v)=>a+v,0);return ` ${c.label}: ${fmt(c.parsed)} KG (${pct(tot?c.parsed/tot*100:0)}%)`}}}
     }
   }
 });
 
 function update(){
-  const s=msS.get(), b=msB.get(), c=msC.get();
-  const rows = DATA.filter(d => has(s,d.secao) && has(b,d.bandeira) && has(c,d.corte));
-  const porMes = MESES.map(()=>({e:0, v:0, f:0}));
+  const s=msS.get(), b=msB.get(), c=msC.get(), m=msM.get();
+  const mv = MESES.filter(x => has(m,x));
+  const rows = DATA.filter(d => has(s,d.secao) && has(b,d.bandeira) && has(c,d.corte) && has(m,d.mes));
+  const porMes = mv.map(()=>({e:0, v:0, f:0}));
   let e=0, v=0, f=0;
   for(const d of rows){
-    const i = MESES.indexOf(d.mes);
+    const i = mv.indexOf(d.mes);
     if(i>=0){ porMes[i].e += d.entrada; porMes[i].v += d.venda; porMes[i].f += d.fat; }
     e += d.entrada; v += d.venda; f += d.fat;
   }
-  const n = MESES.length || 1;
+  const n = mv.length || 1;
+  chart.data.labels = [...mv,'Média'];
   $('kEntrada').textContent = fmt(e);
   $('kVenda').textContent = fmt(v);
   $('kFat').textContent = fmt(f);
-  $('kVendaSub').textContent = e>0 ? `Venda/Entrada: ${fmt(v/e*100)}%` : '\u00a0';
-  $('chartSub').textContent = `Seção: ${txt(s,'Todas')} · Bandeira: ${txt(b,'Todas')} · Corte: ${txt(c,'Todos')} · Média = média mensal do período`;
+  $('kVendaSub').textContent = e>0 ? `Venda/Entrada: ${pct(v/e*100)}%` : '\u00a0';
+  $('chartSub').textContent = `Mês: ${txt(m,'Todos')} · Seção: ${txt(s,'Todas')} · Bandeira: ${txt(b,'Todas')} · Corte: ${txt(c,'Todos')} · Média = média mensal do período`;
   const r3 = x => +x.toFixed(3);
-  chart.data.datasets[0].data = [...porMes.map(m=>r3(m.e)), r3(e/n)];
-  chart.data.datasets[1].data = [...porMes.map(m=>r3(m.v)), r3(v/n)];
-  chart.data.datasets[2].data = [...porMes.map(m=>r3(m.f)), r3(f/n)];
+  chart.data.datasets[0].data = [...porMes.map(m=>r3(m.f)), r3(f/n)];
+  chart.data.datasets[1].data = [...porMes.map(m=>r3(m.e)), r3(e/n)];
+  chart.data.datasets[2].data = [...porMes.map(m=>r3(m.v)), r3(v/n)];
   chart.update();
   updatePie();
 }
 
 function updatePie(){
-  const s=msS.get(), b=msB.get(), c=msC.get(), base=$base.value;
-  const rows = DATA.filter(d => has(s,d.secao) && has(c,d.corte));
+  const s=msS.get(), b=msB.get(), c=msC.get(), m=msM.get(), base=$base.value;
+  const rows = DATA.filter(d => has(s,d.secao) && has(c,d.corte) && has(m,d.mes));
   const vals = BANDEIRAS.map(x => rows.filter(d=>d.bandeira===x).reduce((acc,d)=>acc+d[base==='venda'?'venda':base==='entrada'?'entrada':'fat'],0));
   const total = vals.reduce((a,x)=>a+x,0);
   const ds = pie.data.datasets[0];
@@ -254,17 +262,17 @@ function updatePie(){
   ds.offset = BANDEIRAS.map(x => b.has(x) ? 18 : 0);
   ds.borderColor = cssVar('--card');
   pie.update();
-  $('pieSub').textContent = `${BASES[base]} · Seção: ${txt(s,'Todas')} · Corte: ${txt(c,'Todos')}` + (b.size ? ` · destaque: ${txt(b,'')}` : '');
+  $('pieSub').textContent = `${BASES[base]} · Mês: ${txt(m,'Todos')} · Seção: ${txt(s,'Todas')} · Corte: ${txt(c,'Todos')}` + (b.size ? ` · destaque: ${txt(b,'')}` : '');
   $('pieTbl').innerHTML = BANDEIRAS.map((x,i)=>
-    `<tr class="${b.has(x)?'sel':''}"><td><span class="dot" style="background:${COLORS[x]}"></span>${x}</td><td>${fmt(vals[i])}</td><td>${fmt(total?vals[i]/total*100:0)}%</td></tr>`).join('')
-    + `<tr><td><b>Total</b></td><td><b>${fmt(total)}</b></td><td><b>${fmt(total?100:0)}%</b></td></tr>`;
+    `<tr class="${b.has(x)?'sel':''}"><td><span class="dot" style="background:${COLORS[x]}"></span>${x}</td><td>${fmt(vals[i])}</td><td>${pct(total?vals[i]/total*100:0)}%</td></tr>`).join('')
+    + `<tr><td><b>Total</b></td><td><b>${fmt(total)}</b></td><td><b>${pct(total?100:0)}%</b></td></tr>`;
 }
 
 $base.addEventListener('change', updatePie);
-$('btnLimpar').addEventListener('click', ()=>{ msS.clear(); msB.clear(); fillCortes(); msC.clear(); $base.value='venda'; update(); });
+$('btnLimpar').addEventListener('click', ()=>{ msS.clear(); msM.clear(); msB.clear(); fillCortes(); msC.clear(); $base.value='fat'; update(); });
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{
   Chart.defaults.color = cssVar('--muted');
-  chart.data.datasets[0].backgroundColor = cssVar('--bar1');
+  chart.data.datasets[1].backgroundColor = cssVar('--bar1');
   chart.options.scales.y.grid.color = cssVar('--grid');
   [chart,pie].forEach(ch=>{ch.options.color=cssVar('--muted'); ch.update();}); updatePie();
 });
