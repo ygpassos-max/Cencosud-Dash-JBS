@@ -114,7 +114,7 @@ Chart.defaults.color=cssVar('--muted');
 const COLORS={GBARBOSA:'#0b5ea8',PREZUNIC:'#e8871e',BRETAS:'#1f9d6b',GIGA:'#8e5bd1'};
 const chart = new Chart(document.getElementById('chart'), {
   type:'bar',
-  data:{labels:MESES, datasets:[
+  data:{labels:[...MESES,'Média'], datasets:[
     {label:'Tonelagem Compra (KG)', data:[], backgroundColor:cssVar('--bar1'), borderRadius:4},
     {label:'Tonelagem Venda (KG)', data:[], backgroundColor:'#1f9d6b', borderRadius:4}
   ]},
@@ -145,9 +145,9 @@ function update(){
   document.getElementById('kCompra').textContent = fmt(compra);
   document.getElementById('kVenda').textContent = fmt(venda);
   document.getElementById('kVendaSub').textContent = compra>0 ? `Venda/Compra: ${fmt(venda/compra*100)}%` : '\u00a0';
-  document.getElementById('chartSub').textContent = `Bandeira: ${b} · Corte: ${c}`;
-  chart.data.datasets[0].data = porMes.map(m=>+m.compra.toFixed(3));
-  chart.data.datasets[1].data = porMes.map(m=>+m.venda.toFixed(3));
+  document.getElementById('chartSub').textContent = `Bandeira: ${b} · Corte: ${c} · Média = média mensal de Jan a Out`;
+  chart.data.datasets[0].data = [...porMes.map(m=>+m.compra.toFixed(3)), +(compra/MESES.length).toFixed(3)];
+  chart.data.datasets[1].data = [...porMes.map(m=>+m.venda.toFixed(3)), +(venda/MESES.length).toFixed(3)];
   chart.update();
   updatePie();
 }
