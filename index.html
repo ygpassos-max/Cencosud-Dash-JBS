@@ -38,6 +38,9 @@ button:hover{background:var(--bg)}
 .chart-wrap.sm{height:260px}
 .chart-wrap.md{height:340px}
 .sub.small{font-size:.76rem;margin-top:-8px}
+.explica{display:flex;flex-direction:column;gap:4px;margin-top:10px;font-size:.82rem;color:var(--ink);line-height:1.45}
+.explica .nota{color:var(--muted);font-size:.76rem}
+.explica b{font-weight:700}
 .stack{margin-top:20px}
 .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .seg{display:inline-flex;border:1px solid var(--inputline);border-radius:8px;overflow:hidden;flex:none}
@@ -117,8 +120,12 @@ footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
   <section class="card chart-card stack" id="cardCusto">
     <h2>Custo médio de compra (R$/kg)</h2>
     <div class="sub" id="custoSub"></div>
-    <div class="sub small">Preço: quanto mudou o custo médio de cada corte de um mês para o outro. Mix: quanto da variação veio da mudança na participação dos cortes na compra (por exemplo, mais picanha e menos acém). Com um só corte selecionado, o mix é zero e toda a variação é preço. Última coluna: custo médio do período e variação acumulada do primeiro ao último mês do filtro. "—" = menos de 1 t comprada no mês ou poucos produtos em comum.</div>
     <div class="chart-wrap md"><canvas id="chartCusto"></canvas></div>
+    <div class="explica">
+      <p><b>Preço · mesmos cortes:</b> o mesmo corte ficou mais caro ou mais barato. Ex.: a alcatra passou de R$ 36,78/kg em janeiro para R$ 46,29/kg em outubro.</p>
+      <p><b>Mix · troca de cortes:</b> os preços não mudam, mas compramos mais de um corte e menos de outro. Ex.: comprar mais picanha (R$ 56,70/kg no ano) e menos acém (R$ 30,03/kg) sobe o custo médio.</p>
+      <p class="nota">Com um só corte selecionado, o mix é zero e toda a variação é preço. Última coluna: custo médio do período e variação acumulada do primeiro ao último mês do filtro. "—" = menos de 1 t comprada no mês ou poucos cortes em comum.</p>
+    </div>
   </section>
 
   <section class="card pie-card">
@@ -250,7 +257,7 @@ const lineLabels = {id:'lineLabels', afterDatasetsDraw(ch){
   });
 }};
 let modo = 'separado';
-const Y_W = 92;  // largura fixa do eixo Y para alinhar os meses dos três gráficos
+const Y_W = (window.innerWidth || 0) >= 700 ? 180 : 92;  // largura fixa do eixo Y para alinhar os meses dos três gráficos
 const gridColor = ctx => (ctx.tick && ctx.tick.value === 0) ? '#9aa0a9' : cssVar('--grid');
 const chart = new Chart($('chart'), {
   type:'bar',
@@ -347,7 +354,8 @@ const sinal = v => (v > 0 ? '+' : v < 0 ? '−' : '') + pf.format(Math.abs(v * 1
 const decompRows = {id:'decompRows', afterDraw(ch){
   const info = ch.$decomp; if (!info) return;
   const ctx = ch.ctx, xs = ch.scales.x, y0 = xs.bottom + 10;
-  const nomes = ['Var. custo %', 'Preço %', 'Mix p.p.'], campos = ['tot', 'pr', 'mx'];
+  const nomes = Y_W >= 180 ? ['Custo total %', 'Preço · mesmos cortes %', 'Mix · troca de cortes p.p.'] : ['Custo total %', 'Preço %', 'Mix p.p.'];
+  const campos = ['tot', 'pr', 'mx'];
   ctx.save();
   ctx.font = '600 11px "Segoe UI",system-ui,Arial,sans-serif';
   ctx.textBaseline = 'top';
@@ -372,7 +380,18 @@ const chartCusto = new Chart($('chartCusto'), {
   data:{labels:[...MESES,'Média'], datasets:[
     {label:'Custo médio (R$/kg)', data:[], borderColor:'#6d4c41', backgroundColor:'#6d4c41', borderWidth:3, pointRadius:5, pointStyle:'rect', pointHoverRadius:7, tension:.25, spanGaps:false}
   ]},
-  options: lineOptions('R$/kg', v => 'R$ '+nf.format(v), c => ` Custo médio: R$ ${cf.format(c.parsed.y)}/kg`, false)
+  options: lineOptions('R$/kg', v => 'R$ '+nf.format(v), c => {
+    const info = c.chart.$decomp, n = c.chart.data.labels.length, ult = c.dataIndex === n - 1;
+    const lin = info ? (ult ? info.acum : info.linhas[c.dataIndex]) : null;
+    const fx = (v, u) => v === null || v === undefined ? '—' : sinal(v) + u;
+    const out = [` Custo médio${ult ? ' do período' : ''}: R$ ${cf.format(c.parsed.y)}/kg`];
+    if (lin && lin.tot !== null){
+      out.push(ult ? ` Acumulado ${info.prim} → ${info.ult}: ${fx(lin.tot,'%')}` : ` Custo total: ${fx(lin.tot,'%')} vs mês anterior`);
+      out.push(` Preço · mesmos cortes: ${fx(lin.pr,'%')}`);
+      out.push(` Mix · troca de cortes: ${fx(lin.mx,' p.p.')}`);
+    }
+    return out;
+  }, false)
 });
 chartCusto.config.plugins.push(decompRows);
 chartCusto.options.layout.padding.bottom = 60;
@@ -407,11 +426,16 @@ function update(){
   chartCusto.data.labels = [...mv,'Média · Acum.'];
   const dec = decompCusto(s, b, c, mv);
   chartCusto.$decomp = dec;
-  let resumoCusto = '';
+  let resumoCusto = '', frase = '';
   if (dec.acum.tot !== null){
-    resumoCusto = `${dec.prim} → ${dec.ult}: custo ${sinal(dec.acum.tot)}%` + (dec.acum.pr !== null ? ` (preço ${sinal(dec.acum.pr)}%, mix ${sinal(dec.acum.mx)} p.p.)` : '');
+    const a = dec.acum, abs = pf.format(Math.abs(a.tot * 100));
+    const verbo = a.tot > 0.0005 ? `subiu <b>${abs}%</b>` : a.tot < -0.0005 ? `caiu <b>${abs}%</b>` : 'ficou estável';
+    frase = `${dec.prim} → ${dec.ult}: o custo médio ${verbo}. ` + (a.pr !== null
+      ? `<b>${sinal(a.pr)}%</b> vieram do preço nos mesmos cortes e <b>${sinal(a.mx)} p.p.</b> da mudança no mix de cortes comprados.`
+      : 'Não há dados suficientes para separar preço e mix neste filtro.');
+    resumoCusto = `Custo ${dec.prim} → ${dec.ult}: ${sinal(a.tot)}%` + (a.pr !== null ? ` (preço nos mesmos cortes ${sinal(a.pr)}%, mix de cortes ${sinal(a.mx)} p.p.)` : '');
   }
-  $('custoSub').textContent = 'Média ponderada pelos kg comprados no filtro.' + (resumoCusto ? ' ' + resumoCusto + '.' : '');
+  $('custoSub').innerHTML = 'Média ponderada pelos kg comprados no filtro.' + (frase ? ' ' + frase : '');
   $('kEntrada').textContent = fmt(e);
   const ctT = porMes.reduce((a,x)=>a+x.ct,0), kcT = porMes.reduce((a,x)=>a+x.kc,0);
   $('kCusto').textContent = kcT>0 ? `Custo médio: R$ ${cf.format(ctT/kcT)}/kg` : 'Custo médio: sem dado';
