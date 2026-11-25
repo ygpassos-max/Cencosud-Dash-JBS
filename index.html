@@ -35,6 +35,14 @@ button:hover{background:var(--bg)}
 .chart-card h2{font-size:1.05rem;margin-bottom:2px}
 .chart-card .sub{font-size:.82rem;color:var(--muted);margin-bottom:14px}
 .chart-wrap{position:relative;height:420px}
+.chart-wrap.sm{height:260px}
+.stack{margin-top:20px}
+.chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--inputline);border-radius:8px;overflow:hidden;flex:none}
+.seg button{border:0;border-radius:0;padding:8px 14px;font-size:.85rem;background:var(--input);color:var(--ink)}
+.seg button+button{border-left:1px solid var(--inputline)}
+.seg button[aria-pressed="true"]{background:var(--navy2);color:#fff;font-weight:600}
+.is-hidden{display:none}
 .pie-card{padding:22px;margin-top:20px}
 .pie-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px}
 .pie-head h2{font-size:1.05rem;margin-bottom:2px}
@@ -59,7 +67,7 @@ button.ms-btn{width:100%;text-align:left;padding:10px 34px 10px 12px;position:re
 .hint{font-size:.78rem;color:var(--muted);align-self:center;max-width:220px}
 footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
 @media(max-width:800px){.pie-body{grid-template-columns:1fr}}
-@media(max-width:600px){header{padding:20px}main{padding:16px}.chart-wrap{height:320px}}
+@media(max-width:600px){header{padding:20px}main{padding:16px}.chart-wrap{height:320px}.chart-wrap.sm{height:220px}}
 </style>
 </head>
 <body>
@@ -87,9 +95,27 @@ footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:20px}
   </section>
 
   <section class="card chart-card">
-    <h2>Compra x Venda x Faturamento JBS (KG) · Margem 1 e Quebra Total (% s/ Venda Líquida)</h2>
+    <div class="chart-head">
+      <h2 id="chartTitle">Volume: Faturamento JBS x Compra x Venda (KG)</h2>
+      <div class="seg" role="group" aria-label="Forma de exibir os gráficos">
+        <button type="button" id="btnSep" aria-pressed="true">Gráficos separados</button>
+        <button type="button" id="btnJunto" aria-pressed="false">Tudo em um gráfico</button>
+      </div>
+    </div>
     <div class="sub" id="chartSub"></div>
     <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  </section>
+
+  <section class="card chart-card stack" id="cardPct">
+    <h2>Margem 1 x Quebra Total (% da venda líquida)</h2>
+    <div class="sub" id="pctSub"></div>
+    <div class="chart-wrap sm"><canvas id="chartPct"></canvas></div>
+  </section>
+
+  <section class="card chart-card stack" id="cardCusto">
+    <h2>Custo médio de compra (R$/kg)</h2>
+    <div class="sub">Média ponderada pelos kg comprados no filtro. Média = custo médio do período.</div>
+    <div class="chart-wrap sm"><canvas id="chartCusto"></canvas></div>
   </section>
 
   <section class="card pie-card">
@@ -203,7 +229,8 @@ const lineLabels = {id:'lineLabels', afterDatasetsDraw(ch){
   const ctx = ch.ctx;
   ch.data.datasets.forEach((ds,i) => {
     if(ds.type!=='line') return;
-    const meta = ch.getDatasetMeta(i); if(meta.hidden) return;
+    if(!ch.isDatasetVisible(i)) return;
+    const meta = ch.getDatasetMeta(i);
     const custo = ds.label.startsWith('Custo');
     const acima = custo || ds.label.startsWith('Margem');
     ctx.save();
@@ -217,6 +244,9 @@ const lineLabels = {id:'lineLabels', afterDatasetsDraw(ch){
     ctx.restore();
   });
 }};
+let modo = 'separado';
+const Y_W = 92;  // largura fixa do eixo Y para alinhar os meses dos três gráficos
+const gridColor = ctx => (ctx.tick && ctx.tick.value === 0) ? '#9aa0a9' : cssVar('--grid');
 const chart = new Chart($('chart'), {
   type:'bar',
   plugins:[lineLabels],
@@ -224,24 +254,59 @@ const chart = new Chart($('chart'), {
     {label:'Tonelagem Faturamento JBS (KG)', data:[], backgroundColor:'#e8871e', borderRadius:4},
     {label:'Tonelagem Compra Cenco (KG)', data:[], backgroundColor:cssVar('--bar1'), borderRadius:4},
     {label:'Tonelagem Venda Cenco (KG)', data:[], backgroundColor:'#1f9d6b', borderRadius:4},
-    {type:'line', label:'Margem 1 (%)', data:[], yAxisID:'y1', borderColor:'#8e24aa', backgroundColor:'#8e24aa', borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.25, spanGaps:false},
-    {type:'line', label:'Quebra Total (%)', data:[], yAxisID:'y1', borderColor:'#e53935', backgroundColor:'#e53935', borderWidth:3, borderDash:[7,5], pointRadius:5, pointStyle:'rectRot', pointHoverRadius:7, tension:.25, spanGaps:false},
-    {type:'line', label:'Custo médio (R$/kg)', data:[], yAxisID:'y2', borderColor:'#6d4c41', backgroundColor:'#6d4c41', borderWidth:3, borderDash:[2,4], pointRadius:5, pointStyle:'rect', pointHoverRadius:7, tension:.25, spanGaps:false}
+    // linhas usadas só no modo "Tudo em um gráfico"
+    {type:'line', label:'Margem 1 (%)', data:[], yAxisID:'y1', hidden:true, borderColor:'#8e24aa', backgroundColor:'#8e24aa', borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.25, spanGaps:false},
+    {type:'line', label:'Quebra Total (%)', data:[], yAxisID:'y1', hidden:true, borderColor:'#e53935', backgroundColor:'#e53935', borderWidth:3, borderDash:[7,5], pointRadius:5, pointStyle:'rectRot', pointHoverRadius:7, tension:.25, spanGaps:false},
+    {type:'line', label:'Custo médio (R$/kg)', data:[], yAxisID:'y2', hidden:true, borderColor:'#6d4c41', backgroundColor:'#6d4c41', borderWidth:3, borderDash:[2,4], pointRadius:5, pointStyle:'rect', pointHoverRadius:7, tension:.25, spanGaps:false}
   ]},
   options:{
     responsive:true, maintainAspectRatio:false,
+    layout:{padding:{right:12}},
     interaction:{mode:'index', intersect:false},
     plugins:{
-      legend:{position:'top'},
+      legend:{position:'top', labels:{filter:(item) => modo==='junto' || item.datasetIndex < 3}},
       tooltip:{callbacks:{label:c => c.dataset.yAxisID==='y2' ? ` ${c.dataset.label}: R$ ${cf.format(c.parsed.y)}/kg` : c.dataset.yAxisID==='y1' ? ` ${c.dataset.label}: ${pct(c.parsed.y)}%` : ` ${c.dataset.label}: ${fmt(c.parsed.y)} KG`}}
     },
     scales:{
       x:{grid:{display:false}},
-      y:{grid:{color:cssVar('--grid')}, beginAtZero:true, title:{display:true,text:'KG'}, ticks:{callback:v => nf.format(v)}},
-      y1:{position:'right', grace:'12%', grid:{drawOnChartArea:false}, title:{display:true,text:'% sobre Venda Líquida'}, ticks:{callback:v => pf.format(v)+'%'}},
-      y2:{position:'right', grace:'25%', grid:{drawOnChartArea:false}, title:{display:true,text:'Custo médio (R$/kg)'}, ticks:{callback:v => 'R$ '+nf.format(v)}}
+      y:{grid:{color:gridColor}, beginAtZero:true, title:{display:true,text:'KG'}, ticks:{callback:v => nf.format(v)}, afterFit:s => { s.width = Y_W; }},
+      y1:{display:false, position:'right', grace:'12%', grid:{drawOnChartArea:false}, title:{display:true,text:'% sobre Venda Líquida'}, ticks:{callback:v => pf.format(v)+'%'}},
+      y2:{display:false, position:'right', grace:'25%', grid:{drawOnChartArea:false}, title:{display:true,text:'Custo médio (R$/kg)'}, ticks:{callback:v => 'R$ '+nf.format(v)}}
     }
   }
+});
+
+const lineOptions = (eixo, tick, tip, legenda) => ({
+  responsive:true, maintainAspectRatio:false,
+  layout:{padding:{top:18, right:12}},
+  interaction:{mode:'index', intersect:false},
+  plugins:{
+    legend:{display:legenda, position:'top'},
+    tooltip:{callbacks:{label:tip}}
+  },
+  scales:{
+    x:{offset:true, grid:{display:false}},
+    y:{grace:'22%', grid:{color:gridColor}, title:{display:true,text:eixo}, ticks:{callback:tick}, afterFit:s => { s.width = Y_W; }}
+  }
+});
+
+const chartPct = new Chart($('chartPct'), {
+  type:'line',
+  plugins:[lineLabels],
+  data:{labels:[...MESES,'Média'], datasets:[
+    {label:'Margem 1 (%)', data:[], borderColor:'#8e24aa', backgroundColor:'#8e24aa', borderWidth:3, pointRadius:5, pointHoverRadius:7, tension:.25, spanGaps:false},
+    {label:'Quebra Total (%)', data:[], borderColor:'#e53935', backgroundColor:'#e53935', borderWidth:3, borderDash:[7,5], pointRadius:5, pointStyle:'rectRot', pointHoverRadius:7, tension:.25, spanGaps:false}
+  ]},
+  options: lineOptions('%', v => pf.format(v)+'%', c => ` ${c.dataset.label}: ${pct(c.parsed.y)}%`, true)
+});
+
+const chartCusto = new Chart($('chartCusto'), {
+  type:'line',
+  plugins:[lineLabels],
+  data:{labels:[...MESES,'Média'], datasets:[
+    {label:'Custo médio (R$/kg)', data:[], borderColor:'#6d4c41', backgroundColor:'#6d4c41', borderWidth:3, pointRadius:5, pointStyle:'rect', pointHoverRadius:7, tension:.25, spanGaps:false}
+  ]},
+  options: lineOptions('R$/kg', v => 'R$ '+nf.format(v), c => ` Custo médio: R$ ${cf.format(c.parsed.y)}/kg`, false)
 });
 
 const pie = new Chart($('pie'), {
@@ -270,24 +335,32 @@ function update(){
   }
   const n = mv.length || 1;
   chart.data.labels = [...mv,'Média'];
+  chartPct.data.labels = [...mv,'Média'];
+  chartCusto.data.labels = [...mv,'Média'];
   $('kEntrada').textContent = fmt(e);
   const ctT = porMes.reduce((a,x)=>a+x.ct,0), kcT = porMes.reduce((a,x)=>a+x.kc,0);
   $('kCusto').textContent = kcT>0 ? `Custo médio: R$ ${cf.format(ctT/kcT)}/kg` : 'Custo médio: sem dado';
-  chart.data.datasets[5].data = [...porMes.map(x => x.kc>0 ? +(x.ct/x.kc).toFixed(2) : null), kcT>0 ? +(ctT/kcT).toFixed(2) : null];
+  chartCusto.data.datasets[0].data = [...porMes.map(x => x.kc>0 ? +(x.ct/x.kc).toFixed(2) : null), kcT>0 ? +(ctT/kcT).toFixed(2) : null];
   $('kVenda').textContent = fmt(v);
   $('kFat').textContent = fmt(f);
   $('kVendaSub').textContent = e>0 ? `Venda/Compra: ${pct(v/e*100)}%` : '\u00a0';
-  $('chartSub').textContent = `Mês: ${txt(m,'Todos')} · Seção: ${txt(s,'Todas')} · Bandeira: ${txt(b,'Todas')} · Corte: ${txt(c,'Todos')} · Média = média mensal (colunas) e % do período (linhas)` + (porMes.some(x=>x.fin) ? '' : ' · Sem dados de Margem 1 / Quebra Total para estes filtros');
+  $('chartSub').textContent = `Mês: ${txt(m,'Todos')} · Seção: ${txt(s,'Todas')} · Bandeira: ${txt(b,'Todas')} · Corte: ${txt(c,'Todos')} · Média = média mensal`;
+  $('pctSub').textContent = 'Média = % do período' + (porMes.some(x=>x.fin) ? '' : ' · Sem dados de Margem 1 / Quebra Total para estes filtros');
   const r3 = x => +x.toFixed(3);
   chart.data.datasets[0].data = [...porMes.map(m=>r3(m.f)), r3(f/n)];
   chart.data.datasets[1].data = [...porMes.map(m=>r3(m.e)), r3(e/n)];
   const comFin = porMes.filter(x => x.fin);
   const rate = (a,b) => b ? +(a/b*100).toFixed(3) : null;
   const somaFin = k => comFin.reduce((a,x)=>a+x[k],0);
-  chart.data.datasets[3].data = [...porMes.map(x => x.fin ? rate(x.mg,x.vl) : null), rate(somaFin('mg'), somaFin('vl'))];
-  chart.data.datasets[4].data = [...porMes.map(x => x.fin ? rate(x.qb,x.vl) : null), rate(somaFin('qb'), somaFin('vl'))];
+  chartPct.data.datasets[0].data = [...porMes.map(x => x.fin ? rate(x.mg,x.vl) : null), rate(somaFin('mg'), somaFin('vl'))];
+  chartPct.data.datasets[1].data = [...porMes.map(x => x.fin ? rate(x.qb,x.vl) : null), rate(somaFin('qb'), somaFin('vl'))];
   chart.data.datasets[2].data = [...porMes.map(m=>r3(m.v)), r3(v/n)];
+  chart.data.datasets[3].data = chartPct.data.datasets[0].data;
+  chart.data.datasets[4].data = chartPct.data.datasets[1].data;
+  chart.data.datasets[5].data = chartCusto.data.datasets[0].data;
   chart.update();
+  chartPct.update();
+  chartCusto.update();
   updatePie();
 }
 
@@ -313,11 +386,32 @@ $('btnLimpar').addEventListener('click', ()=>{ msS.clear(); msM.clear(); msB.cle
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{
   Chart.defaults.color = cssVar('--muted');
   chart.data.datasets[1].backgroundColor = cssVar('--bar1');
-  chart.options.scales.y.grid.color = cssVar('--grid');
-  [chart,pie].forEach(ch=>{ch.options.color=cssVar('--muted'); ch.update();}); updatePie();
+  [chart,chartPct,chartCusto,pie].forEach(ch=>{ch.options.color=cssVar('--muted'); ch.update();}); updatePie();
 });
+function setModo(m){
+  modo = m;
+  const junto = m === 'junto';
+  [3,4,5].forEach(i => chart.setDatasetVisibility(i, junto));
+  chart.options.scales.y1.display = junto;
+  chart.options.scales.y2.display = junto;
+  $('cardPct').classList.toggle('is-hidden', junto);
+  $('cardCusto').classList.toggle('is-hidden', junto);
+  $('chartTitle').textContent = junto
+    ? 'Volume (KG) · Margem 1 e Quebra Total (%) · Custo médio (R$/kg)'
+    : 'Volume: Faturamento JBS x Compra x Venda (KG)';
+  $('btnSep').setAttribute('aria-pressed', String(!junto));
+  $('btnJunto').setAttribute('aria-pressed', String(junto));
+  try { localStorage.setItem('dashJbsModo', m); } catch(e) {}
+  chart.update();
+}
+$('btnSep').addEventListener('click', () => setModo('separado'));
+$('btnJunto').addEventListener('click', () => setModo('junto'));
+
 fillCortes();
 update();
+let modoSalvo = 'separado';
+try { modoSalvo = localStorage.getItem('dashJbsModo') || 'separado'; } catch(e) {}
+setModo(modoSalvo === 'junto' ? 'junto' : 'separado');
 </script>
 </body>
 </html>
